@@ -11,13 +11,14 @@ logger = logging.getLogger(__name__)
 
 
 async def post_to_channel(bot: Bot, topic: str = None, mood: str = None,
-                          force_news: bool = False, continue_story: bool = False,
+                          force_news: bool = True, continue_story: bool = False,
                           only_photo: bool = False) -> dict | None:
     try:
         result = await generate_post(
             topic=topic, mood=mood,
             force_news=force_news,
             continue_story=continue_story,
+            category=mood,
         )
         text = result["text"]
         photo_url = result["photo_url"]
@@ -31,8 +32,10 @@ async def post_to_channel(bot: Bot, topic: str = None, mood: str = None,
                     chat_id=CHANNEL_ID,
                     photo=BufferedInputFile(photo_bytes, filename="photo.jpg"),
                     caption=text[:1024] if text else None,
+                    parse_mode="HTML",
                 )
                 message_id = msg.message_id
+
         elif photo_url:
             photo_bytes = await fetch_photo_bytes(photo_url)
             if photo_bytes:
@@ -40,13 +43,19 @@ async def post_to_channel(bot: Bot, topic: str = None, mood: str = None,
                     chat_id=CHANNEL_ID,
                     photo=BufferedInputFile(photo_bytes, filename="photo.jpg"),
                     caption=text[:1024],
+                    parse_mode="HTML",
                 )
                 message_id = msg.message_id
             else:
-                msg = await bot.send_message(chat_id=CHANNEL_ID, text=text)
+                msg = await bot.send_message(
+                    chat_id=CHANNEL_ID, text=text, parse_mode="HTML"
+                )
                 message_id = msg.message_id
+
         else:
-            msg = await bot.send_message(chat_id=CHANNEL_ID, text=text)
+            msg = await bot.send_message(
+                chat_id=CHANNEL_ID, text=text, parse_mode="HTML"
+            )
             message_id = msg.message_id
 
         db.save_post(
@@ -54,10 +63,10 @@ async def post_to_channel(bot: Bot, topic: str = None, mood: str = None,
             photo_url=photo_url,
             message_id=message_id,
             topic=result.get("topic"),
-            mood=result.get("mood"),
+            mood=result.get("category", "hack"),
         )
-        db.add_log("post_published", f"topic={result.get('topic')}, chars={len(text)}")
-        logger.info(f"Posted to channel: {text[:50]}...")
+        db.add_log("post_published", f"cat={result.get('category')}, chars={len(text)}")
+        logger.info(f"Posted to channel: {text[:60]}...")
         return result
 
     except Exception as e:
