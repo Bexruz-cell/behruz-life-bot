@@ -9,7 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 from bot.config import OWNER_ID, CHANNEL_ID
 from bot import database as db
-from bot.generator import generate_post, generate_life_event
+from bot.generator import generate_post, generate_life_event, generate_post_from_topic
 from bot.photo import fetch_photo_bytes
 from bot.poster import post_to_channel
 from bot.keyboards import (
@@ -48,17 +48,15 @@ def build_status_text(bot_username: str = "") -> str:
     active = db.get_setting("active", "1")
     interval_min = int(db.get_setting("interval_min", "120"))
     interval_max = int(db.get_setting("interval_max", "240"))
-    school = db.get_setting("school_mode", "1")
     photo = db.get_setting("photo_mode", "1")
     total = db.get_posts_count()
     today = db.get_today_posts_count()
-    mood = db.get_setting("mood", "нейтральное")
+    category = db.get_setting("mood", "авто")
 
     last_post = db.get_last_post()
     last_time = last_post["created_at"] if last_post else "—"
 
     status_emoji = "✅" if active == "1" else "⏸"
-    school_emoji = "🏫 пропускает уроки" if school == "1" else "📚 не пропускает"
     photo_emoji = "вкл" if photo == "1" else "выкл"
 
     def mins_to_str(m):
@@ -67,14 +65,14 @@ def build_status_text(bot_username: str = "") -> str:
         return f"{m // 60}ч"
 
     return (
-        f"🤖 <b>Бехруз — автопостер</b>\n"
-        f"33-я школа · 8«Д» · Самарканд\n\n"
-        f"📢 Канал: {CHANNEL_ID}\n"
+        f"💀 <b>Dark News Bot — автопостер</b>\n"
+        f"Хакинг · Даркнет · Крипта · Преступления\n\n"
+        f"📢 Канал: <code>{CHANNEL_ID}</code>\n"
         f"🔄 Статус: {status_emoji} {'Активен' if active == '1' else 'Пауза'}\n"
-        f"⏱ Интервал: {mins_to_str(interval_min)}–{mins_to_str(interval_max)} | {school_emoji}\n"
+        f"⏱ Интервал: {mins_to_str(interval_min)}–{mins_to_str(interval_max)}\n"
         f"🖼 Фото: {photo_emoji} | 📊 Всего: {total} · Сегодня: {today}\n"
-        f"🕐 Последний: {last_time}\n"
-        f"🎭 Настроение: {mood}"
+        f"🕐 Последний пост: {last_time}\n"
+        f"🗂 Категория: {category}"
     )
 
 
@@ -221,9 +219,9 @@ async def cb_post_from_preview(cb: CallbackQuery):
 async def cb_set_mood(cb: CallbackQuery):
     if cb.from_user.id != OWNER_ID:
         return
-    current = db.get_setting("mood", "нейтральное")
+    current = db.get_setting("mood", "авто")
     await cb.message.edit_text(
-        f"🎭 <b>Настроение Бехруза</b>\n\nТекущее: <i>{current}</i>\n\nВыбери новое:",
+        f"🗂 <b>Категория постов</b>\n\nТекущая: <i>{current}</i>\n\nВыбери тему:",
         parse_mode="HTML",
         reply_markup=mood_menu(),
     )
@@ -236,10 +234,10 @@ async def cb_mood_set(cb: CallbackQuery):
         return
     mood = cb.data.replace("mood_", "")
     db.set_setting("mood", mood)
-    db.add_log("mood_changed", mood)
+    db.add_log("category_changed", mood)
     active = db.get_setting("active", "1")
     await cb.message.edit_text(
-        f"✅ Настроение установлено: <b>{mood}</b>\n\n{build_status_text()}",
+        f"✅ Категория установлена: <b>{mood}</b>\n\n{build_status_text()}",
         parse_mode="HTML",
         reply_markup=main_menu(active),
     )
@@ -252,7 +250,7 @@ async def cb_custom_topic(cb: CallbackQuery, state: FSMContext):
         return
     await state.set_state(States.waiting_custom_topic)
     await cb.message.answer(
-        "✏️ Напиши тему для поста (например: «ночная прогулка», «злой день»):",
+        "✏️ Введи тему (например: «взлом NASA», «кража $50M в крипте», «новый вирус»):",
         reply_markup=back_to_main(),
     )
     await cb.answer()
@@ -440,11 +438,10 @@ async def cb_settings(cb: CallbackQuery):
     text = (
         f"⚙️ <b>Настройки</b>\n\n"
         f"⏱ Интервал: {interval_min}–{interval_max} мин\n"
-        f"🏫 Режим школы: {school}\n"
-        f"📰 Новости: {news}\n"
+        f"📰 Режим новостей: {news}\n"
         f"🖼 Фото: {photo}\n"
         f"📷 Только фото: {only_photo}\n"
-        f"📖 Продолжить историю: {story}"
+        f"📖 Режим продолжения: {story}"
     )
     await cb.message.edit_text(text, parse_mode="HTML", reply_markup=settings_menu())
     await cb.answer()
@@ -728,22 +725,50 @@ async def cb_templates(cb: CallbackQuery):
 async def cb_template_post(cb: CallbackQuery):
     if cb.from_user.id != OWNER_ID:
         return
-    topic_map = {
-        "тема_вечер": "вечер дома",
-        "тема_музыка": "музыка которую слушаю",
-        "тема_улица": "ночная улица Самарканда",
-        "тема_мысли": "мысли которые не отпускают",
-        "тема_ночь": "ночь и одиночество",
-        "тема_школа": "школа и всё что с ней связано",
+    category = cb.data.replace("template_", "")
+    category_labels = {
+        "hack": "взлом",
+        "dark": "даркнет",
+        "crypto": "крипта",
+        "crime": "преступление",
+        "leak": "утечка данных",
+        "scam": "скам",
+        "malware": "малварь",
+        "breach": "взлом БД",
     }
-    topic = topic_map.get(cb.data, "жизнь")
-    await cb.answer(f"Пишу пост: {topic}...")
-    mood = db.get_setting("mood", "нейтральное")
-    result = await post_to_channel(bot=cb.bot, topic=topic, mood=mood)
-    if result:
-        await cb.message.answer(f"✅ Пост опубликован!\n\n{result['text'][:150]}...")
-    else:
-        await cb.message.answer("❌ Ошибка")
+    label = category_labels.get(category, category)
+    await cb.answer(f"⏳ Ищу новость: {label}...")
+
+    result = await generate_post_from_topic(label, category=category)
+    if not result:
+        await cb.message.answer("❌ Ошибка генерации")
+        return
+
+    text = result["text"]
+    photo_url = result.get("photo_url", "")
+    msg_id = None
+
+    try:
+        if photo_url:
+            photo_bytes = await fetch_photo_bytes(photo_url)
+            if photo_bytes:
+                msg = await cb.bot.send_photo(
+                    chat_id=CHANNEL_ID,
+                    photo=BufferedInputFile(photo_bytes, filename="photo.jpg"),
+                    caption=text[:1024],
+                    parse_mode="HTML",
+                )
+                msg_id = msg.message_id
+        if not msg_id:
+            msg = await cb.bot.send_message(chat_id=CHANNEL_ID, text=text, parse_mode="HTML")
+            msg_id = msg.message_id
+
+        db.save_post(text=text, photo_url=photo_url, message_id=msg_id, topic=label, mood=category)
+        db.add_log("template_post", category)
+        await cb.message.answer(f"✅ Пост <b>{label}</b> опубликован!", parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Template post error: {e}")
+        await cb.message.answer(f"❌ Ошибка: {e}")
 
 
 @router.callback_query(F.data == "clear_history")
