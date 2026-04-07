@@ -1,0 +1,19 @@
+services:
+  - type: worker
+    name: behruz-life-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m bot.main
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: CHANNEL_ID
+        sync: false
+      - key: OWNER_ID
+        sync: false
+    disk:
+      name: bot-data
+      mountPath: /opt/render/project/src/bot
+      sizeGB: 1
