@@ -7,129 +7,109 @@ logger = logging.getLogger(__name__)
 
 POLLINATIONS_BASE = "https://image.pollinations.ai/prompt"
 
-# Позы силуэта по настроению
-SILHOUETTE_POSES = {
-    "грустное":    "silhouette of a teenage boy sitting on curb, head down, knees up",
-    "злое":        "silhouette of a teenage boy standing with hands in pockets, tense posture, looking away",
-    "спокойное":   "silhouette of a teenage boy leaning on wall, one foot up, relaxed",
-    "скучно":      "silhouette of a teenage boy lying on bench, staring at sky",
-    "кайфую":      "silhouette of a teenage boy with headphones, head tilted back, enjoying music",
-    "задумчивое":  "silhouette of a teenage boy sitting on rooftop edge, looking at city lights",
-    "уверенный":   "silhouette of a teenage boy walking confidently down empty street",
-    "нейтральное": "silhouette of a teenage boy standing alone on street corner, hands in hoodie pocket",
+CATEGORY_VISUALS = {
+    "hack": [
+        "black hooded hacker in dark room, multiple screens with green code, dramatic blue light",
+        "close up hands typing on keyboard, dark room, code on screen, hacker aesthetic",
+        "glowing skull on computer monitor, dark cyber room, neon green code rain",
+        "anonymous mask on desk next to laptop, dark moody lighting",
+        "server room at night, red emergency lights, cables everywhere",
+    ],
+    "dark": [
+        "dark web concept, tor browser on screen, dark room, anonymous figure",
+        "shadowy figure in hoodie browsing dark web on laptop, neon light",
+        "underground network visualization, dark blue cyber space, hidden nodes",
+        "encrypted messages on screen, dark corridor, mystery atmosphere",
+    ],
+    "crypto": [
+        "bitcoin symbol burning in digital fire, dark background, dramatic lighting",
+        "cryptocurrency exchange dashboard, red trading charts, hacker stealing crypto",
+        "digital vault breaking open, coins spilling out, dark cyber space",
+        "blockchain network visualization, gold coins falling, dark background",
+        "laptop with crypto wallet app, hand reaching through screen stealing",
+    ],
+    "crime": [
+        "handcuffs on keyboard, dark police lighting, crime scene tape",
+        "police lights reflecting on wet street at night, dark atmosphere",
+        "crime scene with laptop as evidence, forensic lighting",
+        "shadowy criminal figure with briefcase, dark city alley, CCTV camera",
+    ],
+    "leak": [
+        "open folder spilling documents into digital void, dark background",
+        "database breach visualization, red warning screens, data pouring out",
+        "leaked files concept, documents floating in dark space, warning signs",
+    ],
+    "scam": [
+        "phishing hook through laptop screen, dark background, dramatic lighting",
+        "fake website on screen, dark room, scammer at computer",
+        "credit card on fishhook, dark cyber background",
+    ],
+    "malware": [
+        "virus code spreading across screens, red warning alerts, dark room",
+        "ransomware lock screen on computer, room in red light",
+        "digital skull spreading through network cables, dark background",
+        "infected computer with glowing red skull, dark server room",
+    ],
+    "breach": [
+        "broken database icon leaking data streams, dark blue background",
+        "cracked server with data spilling out, neon cyber aesthetic",
+        "hacker accessing corporate database, red alert screens",
+    ],
 }
 
-# Фоны по теме
-BACKGROUND_BY_TOPIC = {
-    "ночная прогулка":   "night street Samarkand, warm streetlights, long road, atmospheric fog",
-    "школа":             "empty school corridor at sunset, light through windows",
-    "музыка":            "night city bokeh lights, warm orange glow, urban rooftop",
-    "одиночество":       "empty dark alley, single streetlight, mist",
-    "вечер":             "golden hour city skyline, warm haze, urban skyline Samarkand",
-    "мысли":             "foggy bridge at night, reflective puddles, city glow",
-    "курить":            "smoke curling in streetlight beam, dark night, urban backstreet",
-    "прогулка":          "long empty street at night, perspective lines, distant lights",
-    "самарканд":         "Registan blue tile domes at night, stars visible, ancient architecture",
-    "закат":             "dramatic Central Asian sunset, orange purple sky, old city rooftops",
-    "дождь":             "rain-soaked street, neon reflections in puddles, night",
-    "новости":           "dark room lit by phone screen glow, night outside window",
-}
-
-STYLE_CORE = (
-    "cinematic photography, moody film grain, "
-    "high contrast, sharp silhouette, backlit, "
-    "deep shadows, atmospheric, 4k quality, "
-    "no face visible, dark aesthetic, teen vibes"
-)
+STYLE = "cinematic, dramatic lighting, high contrast, dark aesthetic, professional photo, 4k, no text, no watermark"
 
 
-def get_pose(mood: str) -> str:
-    return SILHOUETTE_POSES.get(mood, SILHOUETTE_POSES["нейтральное"])
+def get_visual_prompt(category: str, title: str = "") -> str:
+    visuals = CATEGORY_VISUALS.get(category, CATEGORY_VISUALS["hack"])
+    base = random.choice(visuals)
+    return f"{base}, {STYLE}"
 
 
-def get_background(topic: str) -> str:
-    for key, bg in BACKGROUND_BY_TOPIC.items():
-        if key in topic.lower():
-            return bg
-    return "night city street Samarkand, ambient streetlights, urban atmosphere"
-
-
-def build_image_prompt(post_text: str, topic: str = "",
-                       mood: str = "нейтральное",
-                       custom_keywords: str = "") -> str:
-
-    pose = get_pose(mood)
-    background = get_background(topic)
-
-    # Иногда меняем ракурс для разнообразия
-    angle = random.choice([
-        "wide shot,",
-        "low angle shot,",
-        "from behind,",
-        "side profile,",
-        "dramatic backlit,",
-    ])
-
-    prompt = (
-        f"{angle} {pose}, "
-        f"{background}, "
-        f"{STYLE_CORE}"
-    )
-
-    # Добавляем кастомные ключи если они не дефолтные
-    if custom_keywords and "street night city alone music teen" not in custom_keywords:
-        prompt += f", {custom_keywords}"
-
-    return prompt[:450]
-
-
-async def generate_image_url(post_text: str, topic: str = "",
-                              mood: str = "нейтральное",
+async def generate_image_url(post_text: str = "", topic: str = "",
+                              mood: str = "", category: str = "hack",
                               custom_keywords: str = "") -> str:
-    prompt = build_image_prompt(post_text, topic, mood, custom_keywords)
+    prompt = get_visual_prompt(category, post_text)
     encoded = quote(prompt)
     seed = random.randint(1, 99999)
     url = (
         f"{POLLINATIONS_BASE}/{encoded}"
-        f"?width=800&height=600&seed={seed}&nologo=true&model=flux"
+        f"?width=1024&height=576&seed={seed}&nologo=true&model=flux"
     )
-    logger.info(f"Image prompt: {prompt[:120]}...")
+    logger.info(f"Image prompt [{category}]: {prompt[:100]}...")
     return url
 
 
 async def fetch_photo_bytes(url: str) -> bytes | None:
+    """Скачивает изображение — сначала пробует оригинальный URL (из новостей),
+    потом Pollinations, потом Picsum."""
     try:
         async with httpx.AsyncClient(
             follow_redirects=True,
-            timeout=httpx.Timeout(90.0, connect=15.0)
+            timeout=httpx.Timeout(90.0, connect=15.0),
+            headers={"User-Agent": "Mozilla/5.0 (compatible; NewsBot/1.0)"},
         ) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
-                content_type = resp.headers.get("content-type", "")
-                if "image" in content_type:
-                    logger.info(f"AI image generated OK ({len(resp.content)} bytes)")
+                ct = resp.headers.get("content-type", "")
+                if "image" in ct:
+                    logger.info(f"Image OK: {len(resp.content)} bytes")
                     return resp.content
-                else:
-                    logger.warning(f"Unexpected content-type: {content_type}")
-            else:
-                logger.warning(f"Pollinations failed: HTTP {resp.status_code}")
     except Exception as e:
-        logger.warning(f"Pollinations error: {e}")
+        logger.warning(f"Image fetch error: {e}")
 
-    # Фолбэк — Picsum
+    # Picsum fallback
     try:
-        seed = random.randint(1, 1000)
-        fallback_url = f"https://picsum.photos/800/600?random={seed}"
+        fallback = f"https://picsum.photos/1024/576?random={random.randint(1,9999)}"
         async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            resp = await client.get(fallback_url)
+            resp = await client.get(fallback)
             if resp.status_code == 200:
-                logger.info("Fallback: using Picsum image")
                 return resp.content
-    except Exception as e2:
-        logger.warning(f"Picsum fallback failed: {e2}")
+    except Exception:
+        pass
 
     return None
 
 
 async def fetch_photo_url(keywords: str = "") -> str:
-    return await generate_image_url(post_text="", custom_keywords=keywords)
+    return await generate_image_url(category="hack")
