@@ -95,14 +95,14 @@ def interval_menu() -> InlineKeyboardMarkup:
 def mood_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     moods = [
-        ("😐 Нейтральное", "нейтральное"),
-        ("😔 Грустное", "грустное"),
-        ("😤 Злое", "злое"),
-        ("😌 Спокойное", "спокойное"),
-        ("🥱 Скучно", "скучно"),
-        ("🤩 Кайфую", "кайфую"),
-        ("🤔 Задумчивое", "задумчивое"),
-        ("😎 Уверенный", "уверенный"),
+        ("🔀 Авто (миксовать)", "авто"),
+        ("🔴 Взломы",          "hack"),
+        ("💀 Даркнет",         "dark"),
+        ("💸 Крипта",          "crypto"),
+        ("🔫 Преступления",    "crime"),
+        ("📂 Утечки данных",   "leak"),
+        ("🎭 Скам/Фишинг",     "scam"),
+        ("☠️ Малварь",         "malware"),
     ]
     for label, val in moods:
         builder.button(text=label, callback_data=f"mood_{val}")
@@ -123,12 +123,14 @@ def confirm_clear() -> InlineKeyboardMarkup:
 def templates_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     templates = [
-        ("🌙 Вечер", "тема_вечер"),
-        ("🎵 Музыка", "тема_музыка"),
-        ("🏙 Улица", "тема_улица"),
-        ("💭 Мысли", "тема_мысли"),
-        ("😴 Ночь", "тема_ночь"),
-        ("🏫 Школа", "тема_школа"),
+        ("🔴 Взлом",      "hack"),
+        ("💀 Даркнет",    "dark"),
+        ("💸 Крипта",     "crypto"),
+        ("🔫 Преступление","crime"),
+        ("📂 Утечка",     "leak"),
+        ("🎭 Скам",       "scam"),
+        ("☠️ Малварь",    "malware"),
+        ("💣 Взлом БД",   "breach"),
     ]
     for label, val in templates:
         builder.button(text=label, callback_data=f"template_{val}")
