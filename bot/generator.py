@@ -3,9 +3,12 @@ import logging
 import random
 from datetime import datetime
 
-from bot.config import MISTRAL_API_KEY, BEHRUZ_PERSONA
+from bot.config import MISTRAL_API_KEY, CHANNEL_STYLE, CATEGORIES
 from bot import database as db
-from bot.news import get_latest_news, format_news_for_prompt
+from bot.news import (
+    get_latest_news, get_single_news_for_post,
+    format_news_for_prompt, RSS_FEEDS,
+)
 from bot.photo import generate_image_url
 
 logger = logging.getLogger(__name__)
@@ -13,143 +16,57 @@ logger = logging.getLogger(__name__)
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 MODEL = "mistral-small-latest"
 
-TOPICS = [
-    "ночная прогулка по Самарканду",
-    "школа и одноклассники",
-    "мысли перед сном",
-    "музыка которую слушаю",
-    "что раздражает в людях",
-    "одиночество",
-    "вечер дома",
-    "воспоминание о чём-то",
-    "наблюдение за городом",
-    "случайная мысль",
-    "настроение без причины",
-    "лето и жара в Самарканде",
-    "что думаю о жизни",
-    "планы которые не сбылись",
-    "момент из дня",
-]
 
-LIFE_EVENTS = [
-    "поспорил с учителем",
-    "нашёл крутой трек",
-    "долго смотрел в окно",
-    "чуть не опоздал на урок",
-    "шёл домой один, думал о всяком",
-    "слышал как соседи ругались",
-    "видел красивый закат",
-    "телефон завис в важный момент",
-    "съел что-то невкусное",
-    "кто-то написал странное",
-    "долго не мог уснуть",
-    "наблюдал за незнакомцем",
-    "вспомнил что-то из детства",
-    "устал и просто лежал",
-]
+POST_FORMAT_INSTRUCTIONS = """Оформи пост для Telegram-канала по этой новости.
 
+СТРУКТУРА (строго соблюдай):
+{КАТЕГОРИЯ_ЭМОДЗИ} {КАТЕГОРИЯ_НАЗВАНИЕ}
 
-def build_system_prompt(current_time: str, is_school: bool, last_posts: list,
-                        events: list, news_text: str, mood: str,
-                        custom_phrases: list, continue_story: bool) -> str:
+<b>{ЗАГОЛОВОК}</b>
 
-    posts_summary = ""
-    if last_posts:
-        recent = last_posts[:10]
-        posts_summary = "Последние посты (не повторяй темы и фразы):\n"
-        for p in recent:
-            short = p["text"][:80].replace("\n", " ")
-            posts_summary += f"— {short}...\n"
+{2-4 предложения с ключевыми фактами. Кто, что, где, когда, сколько. Никакой воды.}
 
-    events_text = ""
-    if events:
-        events_text = f"\nСобытия сегодня: {', '.join(events)}"
+📌 <b>Источник:</b> {название источника}
+🔗 {ссылка}
 
-    phrases_text = ""
-    if custom_phrases:
-        phrases_text = f"\nТвои личные фразы (используй иногда): {'; '.join(custom_phrases[:5])}"
-
-    story_hint = ""
-    if continue_story and last_posts:
-        prev = last_posts[0]["text"][:100]
-        story_hint = f"\nПродолжи историю из предыдущего поста: «{prev}...»"
-
-    school_status = "ты сейчас на уроках" if is_school else "ты дома или на улице"
-
-    prompt = f"""Ты — {BEHRUZ_PERSONA}
-
-Сейчас: {current_time}. {school_status.capitalize()}.
-Твоё настроение: {mood}.
-{events_text}
-{phrases_text}
-{story_hint}
-
-{posts_summary}
-
-{news_text}
-
-Напиши пост для своего Telegram-канала.
 ПРАВИЛА:
-- Пиши от первого лица, живым языком подростка
-- Короткий или средний текст (2-8 предложений)
-- Без хэштегов, без эмодзи в начале, без «пост», без «опубликовать»
-- Иногда философский, иногда бытовой, иногда дерзкий
-- Можно вопрос к читателям в конце
-- НЕ повторяй темы из последних постов
-- Будь живым, не пиши как робот
-- Пиши только сам текст поста, ничего больше"""
+— Пиши только на русском
+— Переведи и адаптируй с английского если нужно
+— Факты точные, без выдумок
+— Заголовок жёсткий и цепляющий
+— Никаких хэштегов
+— Никакого «по данным СМИ» и канцелярита
+— Если есть цифры (сумма кражи, кол-во жертв) — обязательно укажи
+— Максимум 200 слов"""
 
-    return prompt
+CATEGORY_LABELS = {
+    "hack":    "🔴 ВЗЛОМ",
+    "dark":    "💀 ДАРКНЕТ",
+    "crypto":  "💸 КРИПТА",
+    "crime":   "🔫 ПРЕСТУПЛЕНИЕ",
+    "leak":    "📂 УТЕЧКА ДАННЫХ",
+    "scam":    "🎭 СКАМ",
+    "malware": "☠️ МАЛВАРЬ",
+    "breach":  "💣 ВЗЛОМ БД",
+}
+
+MANUAL_TOPICS = [
+    ("hack",   "масштабный взлом корпоративной сети"),
+    ("dark",   "новый маркетплейс в даркнете"),
+    ("crypto", "кража криптовалюты с биржи"),
+    ("crime",  "арест хакера из группировки"),
+    ("leak",   "утечка базы данных пользователей"),
+    ("scam",   "масштабная фишинговая атака"),
+    ("malware","новый вирус-шифровальщик"),
+    ("breach", "взлом базы данных крупной компании"),
+    ("crypto", "rug pull в DeFi проекте"),
+    ("crime",  "ликвидация даркнет-маркетплейса"),
+    ("hack",   "уязвимость нулевого дня"),
+    ("crime",  "задержание кибер-преступной группировки"),
+]
 
 
-async def generate_post(topic: str = None, mood: str = None,
-                        force_news: bool = False,
-                        continue_story: bool = False) -> dict:
-    now = datetime.now()
-    current_time = now.strftime("%d.%m.%Y %H:%M")
-
-    from bot.config import SCHOOL_START, SCHOOL_END
-    school_start = datetime.strptime(SCHOOL_START, "%H:%M").replace(
-        year=now.year, month=now.month, day=now.day)
-    school_end = datetime.strptime(SCHOOL_END, "%H:%M").replace(
-        year=now.year, month=now.month, day=now.day)
-    is_school = school_start <= now <= school_end and db.get_setting("school_mode", "1") == "1"
-
-    if mood is None:
-        mood = db.get_setting("mood", "нейтральное")
-
-    last_posts = db.get_last_posts(10)
-    events = db.get_today_events()
-    custom_phrases = db.get_custom_phrases()
-
-    news_text = ""
-    if force_news or db.get_setting("news_mode", "0") == "1":
-        news_items = await get_latest_news(3)
-        news_text = format_news_for_prompt(news_items)
-
-    if topic is None:
-        if is_school:
-            topic = random.choice([
-                "скучно на уроке",
-                "жду когда кончится",
-                "думаю о своём пока учитель говорит",
-            ])
-        else:
-            topic = random.choice(TOPICS)
-
-    system_prompt = build_system_prompt(
-        current_time=current_time,
-        is_school=is_school,
-        last_posts=last_posts,
-        events=events,
-        news_text=news_text,
-        mood=mood,
-        custom_phrases=custom_phrases,
-        continue_story=continue_story,
-    )
-
-    user_message = f"Напиши пост на тему: {topic}" if topic else "Напиши пост"
-
+async def call_mistral(system: str, user: str, max_tokens: int = 500) -> str:
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
@@ -161,68 +78,135 @@ async def generate_post(topic: str = None, mood: str = None,
                 json={
                     "model": MODEL,
                     "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
                     ],
-                    "max_tokens": 400,
-                    "temperature": 0.85,
+                    "max_tokens": max_tokens,
+                    "temperature": 0.7,
                 }
             )
             resp.raise_for_status()
-            data = resp.json()
-            text = data["choices"][0]["message"]["content"].strip()
+            return resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as e:
-        logger.error(f"Mistral API error: {e}")
-        text = random.choice([
-            "просто сижу. ни о чём не думаю, просто существую.",
-            "день прошёл как всегда. ничего особенного, но что-то зацепило.",
-            "иногда лучше молчать. слова всё равно не передают то, что внутри.",
-        ])
+        logger.error(f"Mistral error: {e}")
+        return ""
 
-    photo_url = ""
-    if db.get_setting("photo_mode", "1") == "1":
-        custom_keywords = db.get_setting("photo_keywords", "street night city teen")
-        photo_url = await generate_image_url(
-            post_text=text,
-            topic=topic or "",
-            mood=mood,
-            custom_keywords=custom_keywords,
+
+def format_post_manually(news: dict) -> str:
+    cat = news.get("category", "hack")
+    label = CATEGORY_LABELS.get(cat, "🔴 ВЗЛОМ")
+    title = news.get("title", "")
+    summary = news.get("summary", "")[:300]
+    source = news.get("source", "")
+    link = news.get("link", "")
+
+    text = f"{label}\n\n<b>{title}</b>\n\n{summary}"
+    if source:
+        text += f"\n\n📌 <b>Источник:</b> {source}"
+    if link:
+        text += f"\n🔗 {link}"
+    return text
+
+
+async def generate_post(topic: str = None, mood: str = None,
+                        force_news: bool = True,
+                        continue_story: bool = False,
+                        category: str = None) -> dict:
+
+    # Тянем реальную новость
+    news = await get_single_news_for_post()
+
+    # Если задан topic вручную — пробуем найти по теме
+    if topic and not news:
+        news_list = await get_latest_news(count=5)
+        if news_list:
+            news = news_list[0]
+
+    cat = "hack"
+    image_url = ""
+
+    if news:
+        cat = news.get("category", "hack")
+        label = CATEGORY_LABELS.get(cat, "🔴 ВЗЛОМ")
+        news_image = news.get("image_url", "")
+
+        # Формируем промпт для Mistral
+        user_prompt = (
+            f"Новость:\n"
+            f"Заголовок: {news['title']}\n"
+            f"Описание: {news['summary']}\n"
+            f"Источник: {news['source']}\n"
+            f"Ссылка: {news['link']}\n\n"
+            f"Категория поста: {label}\n\n"
+            f"{POST_FORMAT_INSTRUCTIONS.replace('{КАТЕГОРИЯ_ЭМОДЗИ} {КАТЕГОРИЯ_НАЗВАНИЕ}', label)}"
         )
-        logger.info(f"Generated image URL for post (topic={topic}, mood={mood})")
+
+        text = await call_mistral(CHANNEL_STYLE, user_prompt, max_tokens=600)
+
+        if not text:
+            # Фолбэк — форматируем напрямую без Mistral
+            text = format_post_manually(news)
+
+        # Берём картинку из новости или генерируем AI
+        if news_image and news_image.startswith("http"):
+            image_url = news_image
+            logger.info(f"Using news image: {news_image[:80]}")
+        else:
+            image_url = await generate_image_url(category=cat)
+
+    else:
+        # Нет новости — генерируем на случайную тему
+        cat_key, fallback_topic = random.choice(MANUAL_TOPICS)
+        cat = cat_key
+        label = CATEGORY_LABELS.get(cat, "🔴 ВЗЛОМ")
+
+        user_prompt = (
+            f"Придумай и напиши правдоподобную новость на тему: «{topic or fallback_topic}».\n"
+            f"Категория: {label}\n\n"
+            f"{POST_FORMAT_INSTRUCTIONS}"
+        )
+        text = await call_mistral(CHANNEL_STYLE, user_prompt, max_tokens=600)
+
+        if not text:
+            text = f"{label}\n\n<b>Свежие новости из мира кибербезопасности</b>\n\nНет связи с источниками. Попробуй позже."
+
+        image_url = await generate_image_url(category=cat)
 
     return {
         "text": text,
-        "photo_url": photo_url,
+        "photo_url": image_url,
+        "topic": topic or (news["title"][:50] if news else "авто"),
+        "mood": cat,
+        "category": cat,
+        "news": news,
+    }
+
+
+async def generate_post_from_topic(topic: str, category: str = "hack") -> dict:
+    """Генерирует пост по конкретной теме без RSS."""
+    label = CATEGORY_LABELS.get(category, "🔴 ВЗЛОМ")
+    user_prompt = (
+        f"Напиши новостной пост для Telegram-канала на тему: «{topic}».\n"
+        f"Категория: {label}\n\n"
+        f"{POST_FORMAT_INSTRUCTIONS}"
+    )
+    text = await call_mistral(CHANNEL_STYLE, user_prompt, max_tokens=600)
+    if not text:
+        text = f"{label}\n\n<b>{topic}</b>\n\nИнформация по данной теме."
+
+    image_url = await generate_image_url(category=category)
+    return {
+        "text": text,
+        "photo_url": image_url,
         "topic": topic,
-        "mood": mood,
-        "is_school": is_school,
+        "mood": category,
+        "category": category,
+        "news": None,
     }
 
 
 async def generate_life_event() -> str:
-    event = random.choice(LIFE_EVENTS)
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(
-                MISTRAL_API_URL,
-                headers={
-                    "Authorization": f"Bearer {MISTRAL_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": MODEL,
-                    "messages": [
-                        {"role": "system", "content": BEHRUZ_PERSONA},
-                        {"role": "user",
-                         "content": f"Опиши кратко жизненный эпизод: «{event}». 2-3 предложения от первого лица."},
-                    ],
-                    "max_tokens": 150,
-                    "temperature": 0.9,
-                }
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        logger.error(f"Life event generation error: {e}")
-        return event
+    """Оставлено для совместимости — генерирует случайную криминальную новость."""
+    cat_key, topic = random.choice(MANUAL_TOPICS)
+    result = await generate_post_from_topic(topic, cat_key)
+    return result["text"]
