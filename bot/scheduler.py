@@ -6,7 +6,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from aiogram import Bot
 
-from bot.config import OWNER_ID, SCHOOL_START, SCHOOL_END
+from bot.config import OWNER_ID
 from bot import database as db
 from bot.poster import post_to_channel
 from bot.handlers import send_daily_report
@@ -27,27 +27,20 @@ async def auto_post_job(bot: Bot):
         logger.debug("Bot paused, skipping auto post")
         return
 
-    now = datetime.now()
-    current_time = now.strftime("%H:%M")
-    school_mode = db.get_setting("school_mode", "1") == "1"
+    category = db.get_setting("mood", "авто")
+    if category == "авто":
+        category = None
 
-    if school_mode and SCHOOL_START <= current_time <= SCHOOL_END:
-        roll = random.random()
-        if roll > 0.15:
-            logger.debug("School time, skipping (with 85% chance)")
-            return
-
-    mood = db.get_setting("mood", "нейтральное")
     only_photo = db.get_setting("only_photo_mode", "0") == "1"
     continue_story = db.get_setting("continue_story_mode", "0") == "1"
 
     result = await post_to_channel(
-        bot=bot, mood=mood,
+        bot=bot, mood=category,
         only_photo=only_photo,
         continue_story=continue_story,
     )
     if result:
-        logger.info(f"Auto post success: {result['text'][:50]}")
+        logger.info(f"Auto post success [{result.get('category','?')}]: {result['text'][:60]}")
     else:
         logger.error("Auto post failed")
 
